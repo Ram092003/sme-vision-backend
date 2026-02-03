@@ -3,24 +3,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 import pandas as pd
 import io
+import pdfplumber
 from sqlalchemy.orm import Session
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
-from database import SessionLocal
-from models import Transaction
+from database import SessionLocal, engine
+from models import Base, Transaction
 
-from database import engine
-from models import Base
-
-Base.metadata.create_all(bind=engine)
-
+# ================= APP INIT =================
 app = FastAPI(title="SME Financial Health API")
+
+# ================= DB INIT =================
+Base.metadata.create_all(bind=engine)
 
 # ================= CORS =================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # allow Netlify + all origins
+    allow_origins=["*"],  # allow Netlify + all
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -32,14 +32,33 @@ def home():
     return {"status": "Backend running fine ✅"}
 
 # ==================================================
-# ANALYZE + REPORT
+# ANALYZE + REPORT (CSV / XLSX / PDF)
 # ==================================================
 @app.post("/analyze/final-report")
 async def analyze_financials(file: UploadFile = File(...)):
 
     contents = await file.read()
-    df = pd.read_csv(io.StringIO(contents.decode("utf-8")))
+    filename = file.filename.lower()
 
+    # ---------- FILE TYPE DETECTION ----------
+    if filename.endswith(".csv"):
+        df = pd.read_csv(io.StringIO(contents.decode("utf-8")))
+
+    elif filename.endswith(".xlsx"):
+        df = pd.read_excel(io.BytesIO(contents), engine="openpyxl")
+
+    elif filename.endswith(".pdf"):
+        text_data = []
+        with pdfplumber.open(io.BytesIO(contents)) as pdf:
+            for page in pdf.pages:
+                text_data.append(page.extract_text())
+        text = "\n".join(text_data)
+        df = pd.read_csv(io.StringIO(text))
+
+    else:
+        return {"error": "Unsupported file format"}
+
+    # ---------- CLEAN ----------
     df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0)
     df["type"] = df["type"].str.lower().str.strip()
     df["date"] = pd.to_datetime(df["date"])
@@ -73,8 +92,10 @@ async def analyze_financials(file: UploadFile = File(...)):
 
     # ---------- CREDIT ----------
     credit = 50
-    if net_profit > 0: credit += 20
-    if profit_margin > 10: credit += 15
+    if net_profit > 0:
+        credit += 20
+    if profit_margin > 10:
+        credit += 15
     credit = min(100, credit)
 
     # ---------- MONTHLY ----------
@@ -114,7 +135,7 @@ async def analyze_financials(file: UploadFile = File(...)):
     }
 
 # ==================================================
-# ✅ PDF DOWNLOAD (FIXED)
+# PDF DOWNLOAD
 # ==================================================
 @app.post("/download-pdf")
 async def download_pdf(data: dict):
@@ -139,19 +160,9 @@ async def download_pdf(data: dict):
     c.drawString(50, y, "Loan Recommendation")
     y -= 20
 
-    loan = data["loan_recommendation"]
-    for k, v in loan.items():
+    for k, v in data["loan_recommendation"].items():
         c.drawString(50, y, f"{k.replace('_',' ').title()}: {v}")
         y -= 15
-
-    y -= 20
-    c.setFont("Helvetica-Bold", 13)
-    c.drawString(50, y, "AI Summary")
-    y -= 15
-
-    for line in data["ai_summary"]["english"].split("."):
-        c.drawString(50, y, line)
-        y -= 14
 
     c.save()
     buffer.seek(0)
@@ -159,9 +170,5 @@ async def download_pdf(data: dict):
     return StreamingResponse(
         buffer,
         media_type="application/pdf",
-        headers={
-            "Content-Disposition": "attachment; filename=SME_Financial_Report.pdf"
-        }
-
+        headers={"Content-Disposition": "attachment; filename=SME_Report.pdf"}
     )
-
