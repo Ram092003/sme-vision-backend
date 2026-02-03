@@ -10,6 +10,11 @@ from reportlab.pdfgen import canvas
 from database import SessionLocal
 from models import Transaction
 
+from database import engine
+from models import Base
+
+Base.metadata.create_all(bind=engine)
+
 app = FastAPI(title="SME Financial Health API")
 
 # ================= CORS =================
@@ -157,4 +162,5 @@ async def download_pdf(data: dict):
         headers={
             "Content-Disposition": "attachment; filename=SME_Financial_Report.pdf"
         }
+
     )
