@@ -11,13 +11,12 @@ from reportlab.pdfgen import canvas
 from database import SessionLocal, engine
 from models import Base, Transaction
 
-# ================= APP INIT =================
+
 app = FastAPI(title="SME Financial Health API")
 
-# ================= DB INIT =================
 Base.metadata.create_all(bind=engine)
 
-# ================= CORS =================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # allow Netlify + all
@@ -26,21 +25,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ================= HEALTH =================
+
 @app.get("/")
 def home():
     return {"status": "Backend running fine ✅"}
 
-# ==================================================
-# ANALYZE + REPORT (CSV / XLSX / PDF)
-# ==================================================
+
 @app.post("/analyze/final-report")
 async def analyze_financials(file: UploadFile = File(...)):
 
     contents = await file.read()
     filename = file.filename.lower()
 
-    # ---------- FILE TYPE DETECTION ----------
+    
     if filename.endswith(".csv"):
         df = pd.read_csv(io.StringIO(contents.decode("utf-8")))
 
@@ -58,12 +55,12 @@ async def analyze_financials(file: UploadFile = File(...)):
     else:
         return {"error": "Unsupported file format"}
 
-    # ---------- CLEAN ----------
+   
     df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0)
     df["type"] = df["type"].str.lower().str.strip()
     df["date"] = pd.to_datetime(df["date"])
 
-    # ---------- SAVE DB ----------
+    
     db: Session = SessionLocal()
     for _, row in df.iterrows():
         db.add(Transaction(
@@ -134,9 +131,7 @@ async def analyze_financials(file: UploadFile = File(...)):
         }
     }
 
-# ==================================================
-# PDF DOWNLOAD
-# ==================================================
+
 @app.post("/download-pdf")
 async def download_pdf(data: dict):
 
@@ -172,3 +167,4 @@ async def download_pdf(data: dict):
         media_type="application/pdf",
         headers={"Content-Disposition": "attachment; filename=SME_Report.pdf"}
     )
+
