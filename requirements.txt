@@ -7,3 +7,5 @@ numpy
 sqlalchemy
 psycopg2-binary
 reportlab
+openpyxl
+pdfplumber
